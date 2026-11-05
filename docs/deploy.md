@@ -1,3 +1,7 @@
+> **Status (Nov 2026):** this is Budi's description and is being replaced. The target flow is in
+> [design-deploy.md](./design-deploy.md). `apply.yml` has been removed; `infra-plan.yml` posts a
+> `terragrunt plan` on PRs. Applies are still manual (platform engineer) until step 3/4 of the rollout.
+
 # How we deploy
 
 I apply from my laptop. That is the source of truth.

@@ -1,16 +1,35 @@
 image:
   repository: 111111111111.dkr.ecr.ap-southeast-3.amazonaws.com/claims-worker
-  tag: latest
+  # Pinned to what is running (worker log: v1.14.2). `latest` + imagePullPolicy IfNotPresent
+  # meant nodes ran different code depending on when they pulled. Bump by PR.
+  tag: "1.14.2"
 
 serviceAccount:
-  name: claims-worker-sa
+  # MUST match `service_account` in live/acme/ap-southeast-3/claims/prod/claims-worker-iam.
+  # The IRSA trust policy is bound to system:serviceaccount:claims:claims-worker.
+  # Renaming this without changing the IAM stack first breaks every worker pod
+  # (see docs/incident-2026-10-14-claims-worker.md). CI checks this (scripts/check-irsa-service-accounts.py).
+  name: claims-worker
   roleArn: arn:aws:iam::111111111111:role/claims-worker-prod
 
 env:
   AWS_REGION: ap-southeast-3
   QUEUE_URL: https://sqs.ap-southeast-3.amazonaws.com/111111111111/claims-documents
-  DATABASE_URL: postgres://claims:Cl41ms-Pr0d-2024!@claims-db.prod.acme.internal:5432/claims
+  DOCUMENTS_BUCKET: acme-claims-documents-prod
   WORKER_CONCURRENCY: "4"
+
+# BestEffort pods were the first to be evicted and the worker itself warns about it.
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+# DATABASE_URL lives in the claims-worker-db Secret (was a plaintext password in this file and
+# therefore in git history; rotate it). See docs/takeover.md.
+envFromSecrets:
+  - claims-worker-db
 
 autoscaling:
   enabled: true

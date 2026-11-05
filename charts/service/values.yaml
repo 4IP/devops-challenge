@@ -12,8 +12,13 @@ serviceAccount:
   # IAM role for IRSA. Leave empty to run without AWS permissions.
   roleArn: ""
 
-# Plain environment variables, rendered as name/value pairs.
+# Plain environment variables, rendered as name/value pairs. Not for secrets.
 env: {}
+
+# Names of existing Kubernetes Secrets whose keys are injected as environment variables
+# (envFrom/secretRef). Create the Secret out of band or with External Secrets; values files
+# are committed to a repo that product engineers can read.
+envFromSecrets: []
 
 resources: {}
 

@@ -1,0 +1,132 @@
+# Stage 1 of docs/design-deploy.md: every PR that touches live/ or modules/ gets a terragrunt plan
+# for the stacks it changed, posted as a PR comment. Read-only role via OIDC, no secrets.
+# Apply stays manual (from a laptop, by the platform engineer) until stage 2 adds the apply
+# workflow behind the `prod` environment's required reviewer.
+#
+# Activation: apply live/acme/ap-southeast-3/platform/prod/github-actions once, then set the
+# repository variable AWS_PLAN_ROLE_ARN to its role_arn output. Until then the job detects the
+# missing variable, skips the AWS steps and says so in the job summary (it stays green: a fork or
+# a repo without an AWS account is not a failed plan).
+name: infra-plan
+
+on:
+  pull_request:
+    paths:
+      - "live/**"
+      - "modules/**"
+
+permissions:
+  id-token: write # OIDC token for AWS
+  contents: read
+  pull-requests: write # plan comment
+
+concurrency:
+  group: infra-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-southeast-3
+  AWS_PLAN_ROLE_ARN: ${{ vars.AWS_PLAN_ROLE_ARN }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to diff against the base branch
+
+      - name: Which stacks changed
+        id: stacks
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          # A changed module affects every stack that sources it; keep it simple and plan all
+          # stacks under live/ when modules/ changes, otherwise only the changed stack dirs.
+          if git diff --name-only "$base" HEAD -- modules/ | grep -q .; then
+            dirs=$(find live -name terragrunt.hcl -not -path 'live/terragrunt.hcl' -exec dirname {} \; | sort)
+          else
+            dirs=$(git diff --name-only "$base" HEAD -- live/ | xargs -r -n1 dirname | sort -u \
+                   | while read -r d; do [ -f "$d/terragrunt.hcl" ] && echo "$d"; done || true)
+          fi
+          echo "dirs<<EOF" >> "$GITHUB_OUTPUT"; echo "$dirs" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "$dirs"
+
+      - name: Is AWS configured
+        id: aws
+        env:
+          DIRS: ${{ steps.stacks.outputs.dirs }}
+        run: |
+          if [ -n "$DIRS" ] && [ -n "$AWS_PLAN_ROLE_ARN" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### terragrunt plan skipped"
+              if [ -z "$DIRS" ]; then
+                echo "No stack under \`live/\` changed."
+              else
+                echo "Repository variable \`AWS_PLAN_ROLE_ARN\` is not set, so there is no AWS role to plan with."
+                echo "Apply \`live/acme/ap-southeast-3/platform/prod/github-actions\` and set the variable to its \`role_arn\` output to enable plans."
+                echo ""
+                echo "Stacks that would be planned:"
+                echo '```'
+                echo "$DIRS"
+                echo '```'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.aws.outputs.run == 'true'
+        with:
+          role-to-assume: ${{ env.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.aws.outputs.run == 'true'
+        with:
+          terraform_version: 1.13.2
+          terraform_wrapper: false
+
+      - name: Install terragrunt
+        if: steps.aws.outputs.run == 'true'
+        run: |
+          curl -sSL -o /usr/local/bin/terragrunt \
+            https://github.com/gruntwork-io/terragrunt/releases/download/v0.67.16/terragrunt_linux_amd64
+          chmod +x /usr/local/bin/terragrunt
+          terragrunt --version
+
+      - name: terragrunt plan
+        if: steps.aws.outputs.run == 'true'
+        id: plan
+        run: |
+          set -euo pipefail
+          out=plan.md
+          echo "## terragrunt plan" > "$out"
+          for d in ${{ steps.stacks.outputs.dirs }}; do
+            echo "<details><summary><code>$d</code></summary>" >> "$out"
+            echo '' >> "$out"; echo '```' >> "$out"
+            # AWS_PROFILE=acme in the generated provider block does not exist on the runner:
+            # the OIDC credentials come from the environment instead.
+            (cd "$d" && TERRAGRUNT_NON_INTERACTIVE=true terragrunt plan -no-color -lock-timeout=60s 2>&1 | tail -n 200) >> "$out" || echo "PLAN FAILED" >> "$out"
+            echo '```' >> "$out"; echo '</details>' >> "$out"
+          done
+
+      - name: Comment plan on PR
+        if: steps.aws.outputs.run == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('plan.md', 'utf8').slice(0, 65000);
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+            });
+            const mine = comments.find(c => c.user.type === 'Bot' && c.body.startsWith('## terragrunt plan'));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+            }
