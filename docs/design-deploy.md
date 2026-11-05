@@ -104,5 +104,7 @@ running workload.
 
 `modules/github-oidc-role` (+ tests), `live/acme/ap-southeast-3/platform/prod/github-actions`
 (`gha-plan`), `.github/workflows/infra-plan.yml`, root `live/terragrunt.hcl` profile handling,
-`apply.yml` deleted. To activate: apply the `github-actions` stack from a laptop once (the last
-chicken-and-egg apply), set the real `org/repo` in it, and open a PR.
+`apply.yml` deleted. To activate: set the real `org/repo` in the `github-actions` stack, apply it
+from a laptop once (the last chicken-and-egg apply), and set the repository variable
+`AWS_PLAN_ROLE_ARN` to its `role_arn` output. Until the variable exists the workflow skips the AWS
+steps and says so in the job summary, so forks and this take-home stay green.

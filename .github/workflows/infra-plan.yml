@@ -2,6 +2,11 @@
 # for the stacks it changed, posted as a PR comment. Read-only role via OIDC, no secrets.
 # Apply stays manual (from a laptop, by the platform engineer) until stage 2 adds the apply
 # workflow behind the `prod` environment's required reviewer.
+#
+# Activation: apply live/acme/ap-southeast-3/platform/prod/github-actions once, then set the
+# repository variable AWS_PLAN_ROLE_ARN to its role_arn output. Until then the job detects the
+# missing variable, skips the AWS steps and says so in the job summary (it stays green: a fork or
+# a repo without an AWS account is not a failed plan).
 name: infra-plan
 
 on:
@@ -21,6 +26,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-southeast-3
+  AWS_PLAN_ROLE_ARN: ${{ vars.AWS_PLAN_ROLE_ARN }}
   TF_IN_AUTOMATION: "true"
 
 jobs:
@@ -47,20 +53,45 @@ jobs:
           echo "dirs<<EOF" >> "$GITHUB_OUTPUT"; echo "$dirs" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
           echo "$dirs"
 
+      - name: Is AWS configured
+        id: aws
+        env:
+          DIRS: ${{ steps.stacks.outputs.dirs }}
+        run: |
+          if [ -n "$DIRS" ] && [ -n "$AWS_PLAN_ROLE_ARN" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### terragrunt plan skipped"
+              if [ -z "$DIRS" ]; then
+                echo "No stack under \`live/\` changed."
+              else
+                echo "Repository variable \`AWS_PLAN_ROLE_ARN\` is not set, so there is no AWS role to plan with."
+                echo "Apply \`live/acme/ap-southeast-3/platform/prod/github-actions\` and set the variable to its \`role_arn\` output to enable plans."
+                echo ""
+                echo "Stacks that would be planned:"
+                echo '```'
+                echo "$DIRS"
+                echo '```'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: aws-actions/configure-aws-credentials@v4
-        if: steps.stacks.outputs.dirs != ''
+        if: steps.aws.outputs.run == 'true'
         with:
-          role-to-assume: arn:aws:iam::111111111111:role/gha-plan
+          role-to-assume: ${{ env.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3
-        if: steps.stacks.outputs.dirs != ''
+        if: steps.aws.outputs.run == 'true'
         with:
           terraform_version: 1.13.2
           terraform_wrapper: false
 
       - name: Install terragrunt
-        if: steps.stacks.outputs.dirs != ''
+        if: steps.aws.outputs.run == 'true'
         run: |
           curl -sSL -o /usr/local/bin/terragrunt \
             https://github.com/gruntwork-io/terragrunt/releases/download/v0.67.16/terragrunt_linux_amd64
@@ -68,7 +99,7 @@ jobs:
           terragrunt --version
 
       - name: terragrunt plan
-        if: steps.stacks.outputs.dirs != ''
+        if: steps.aws.outputs.run == 'true'
         id: plan
         run: |
           set -euo pipefail
@@ -84,7 +115,7 @@ jobs:
           done
 
       - name: Comment plan on PR
-        if: steps.stacks.outputs.dirs != ''
+        if: steps.aws.outputs.run == 'true'
         uses: actions/github-script@v7
         with:
           script: |
