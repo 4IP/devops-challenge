@@ -24,8 +24,8 @@ variable "additional_service_accounts" {
     renaming a service account: add the new name here, roll the workload over, then make it
     `service_account` and empty this list.
   EOT
-  type    = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }
 
 variable "policy_statements" {
