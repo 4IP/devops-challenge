@@ -10,6 +10,7 @@ env:
   AWS_REGION: ap-southeast-3
   QUEUE_URL: https://sqs.ap-southeast-3.amazonaws.com/111111111111/claims-documents-dev
   DATABASE_URL: postgres://claims:claims-dev@claims-db.dev.acme.internal:5432/claims
+  DOCUMENTS_BUCKET: acme-claims-documents-dev
   WORKER_CONCURRENCY: "2"
 
 resources:

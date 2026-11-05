@@ -14,6 +14,7 @@ env:
   AWS_REGION: ap-southeast-3
   QUEUE_URL: https://sqs.ap-southeast-3.amazonaws.com/111111111111/claims-documents
   DATABASE_URL: postgres://claims:Cl41ms-Pr0d-2024!@claims-db.prod.acme.internal:5432/claims
+  DOCUMENTS_BUCKET: acme-claims-documents-prod
   WORKER_CONCURRENCY: "4"
 
 autoscaling:

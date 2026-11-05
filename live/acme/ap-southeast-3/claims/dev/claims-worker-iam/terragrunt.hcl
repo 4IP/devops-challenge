@@ -24,11 +24,22 @@ dependency "queue" {
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
 }
 
+dependency "documents" {
+  config_path = "../claims-documents-bucket"
+
+  mock_outputs = {
+    bucket_arn  = "arn:aws:s3:::acme-claims-documents-dev"
+    kms_key_arn = "arn:aws:kms:ap-southeast-3:111111111111:key/MOCK"
+  }
+  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+}
+
 inputs = {
   name              = "claims-worker-dev"
   oidc_provider_arn = dependency.eks.outputs.oidc_provider_arn
   namespace         = "claims"
-  service_account   = "claims-worker"
+  # Must match serviceAccount.name in apps/acme-dev-cluster/values/claims-worker.yaml (CI checks).
+  service_account = "claims-worker"
 
   policy_statements = [
     {
@@ -41,6 +52,19 @@ inputs = {
         "sqs:GetQueueAttributes",
       ]
       resources = [dependency.queue.outputs.queue_arn]
+    },
+    {
+      # OCR reads submitted documents only. It never writes to the bucket and cannot see tmp/.
+      sid       = "ReadDocuments"
+      effect    = "Allow"
+      actions   = ["s3:GetObject"]
+      resources = ["${dependency.documents.outputs.bucket_arn}/claims/*"]
+    },
+    {
+      sid       = "DocumentsKey"
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
+      resources = [dependency.documents.outputs.kms_key_arn]
     },
   ]
 }
