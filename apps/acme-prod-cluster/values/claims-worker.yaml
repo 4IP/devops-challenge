@@ -3,7 +3,11 @@ image:
   tag: latest
 
 serviceAccount:
-  name: claims-worker-sa
+  # MUST match `service_account` in live/acme/ap-southeast-3/claims/prod/claims-worker-iam.
+  # The IRSA trust policy is bound to system:serviceaccount:claims:claims-worker.
+  # Renaming this without changing the IAM stack first breaks every worker pod
+  # (see docs/incident-2026-10-14-claims-worker.md). CI checks this (scripts/check-irsa-service-accounts.py).
+  name: claims-worker
   roleArn: arn:aws:iam::111111111111:role/claims-worker-prod
 
 env:

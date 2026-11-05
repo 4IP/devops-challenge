@@ -6,3 +6,4 @@ Notes from Budi. Some of this is from memory — update if you notice drift.
 - [How we deploy](./deploy.md)
 - [Claims worker](./claims-worker.md)
 - [Security](./security.md)
+- [Incident 2026-10-14 — claims-worker down](./incident-2026-10-14-claims-worker.md) (runbook + postmortem)

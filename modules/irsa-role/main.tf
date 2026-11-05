@@ -1,5 +1,13 @@
 locals {
   oidc_issuer = replace(var.oidc_provider_arn, "/^.*oidc-provider\\//", "")
+
+  # Kubernetes identities allowed to assume this role. Normally exactly one; additional names are
+  # for renaming a service account without an outage (trust both, switch the workload, remove the
+  # old one). Exposed as an output so what ends up in the trust policy is visible in plans and tests.
+  trusted_subjects = [
+    for sa in distinct(concat([var.service_account], var.additional_service_accounts)) :
+    "system:serviceaccount:${var.namespace}:${sa}"
+  ]
 }
 
 data "aws_iam_policy_document" "assume" {
@@ -15,7 +23,7 @@ data "aws_iam_policy_document" "assume" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_issuer}:sub"
-      values   = ["system:serviceaccount:${var.namespace}:${var.service_account}"]
+      values   = local.trusted_subjects
     }
   }
 }

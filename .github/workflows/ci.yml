@@ -81,3 +81,16 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
           ./kubeconform -strict -ignore-missing-schemas \
             rendered/claims-worker-dev.yaml rendered/claims-worker-prod.yaml
+
+  # Cross-checks that cannot live inside one tool: the Helm values in apps/ and the IRSA stacks
+  # in live/ have to agree on service account name + namespace (incident 2026-10-14).
+  consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml==6.0.2
+      - name: service accounts match IRSA trust policies
+        run: python3 scripts/check-irsa-service-accounts.py
